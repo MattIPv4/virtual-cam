@@ -20,6 +20,13 @@ const getMeanPosition = data => data
     .reduce((a, b) => [a[0] + b[0], a[1] + b[1]])
     .map(a => a / data.length);
 
+const getDistance = (fromData, toData) => [toData[0] - fromData[0], toData[1] - fromData[1]];
+
+const getAbsDistance = (fromData, toData) => {
+    const distance = getDistance(fromData, toData);
+    return Math.sqrt(Math.pow(distance[0], 2) + Math.pow(distance[1], 2))
+};
+
 const loadNets = async () => {
     log('Loading nets...');
     await faceapi.nets.ssdMobilenetv1.loadFromDisk('./weights');
@@ -75,57 +82,122 @@ const processImage = async img => {
     };
 };
 
-const main = async () => {
-    // Load the nets we need
-    await loadNets();
+const DEFAULT_TRANSFORMS = {
+    scale: 2.25,
+    translate: { x: -75, y: 150 },
+    rotate: 0.185,
+};
 
-    // Load the sample face in
-    log('Loading face...');
-    const face = await loadImage('test/rotated.jpg');
-    const data = await processImage(face);
-    console.log(data);
+const transforms = (base, updated) => {
+    // const baseAvgSize = (base.width + base.height) / 2;
+    const baseAvgSize = (getAbsDistance(base.eyeLeft, base.nose) + getAbsDistance(base.eyeRight, base.nose)) / 2;
+    // const updatedAvgSize = (updated.width + updated.height) / 2;
+    const updatedAvgSize = (getAbsDistance(updated.eyeLeft, updated.nose) + getAbsDistance(updated.eyeRight, updated.nose)) / 2;
+    const scale = updatedAvgSize / baseAvgSize;
 
-    // Output
-    log('Generating output...');
-    const out = faceapi.createCanvasFromMedia(face);
-    const ctx = out.getContext('2d');
+    const baseCenter = [base.x + base.width / 2, base.y + base.height / 2];
+    const updatedCenter = [updated.x + updated.width / 2, updated.y + updated.height / 2];
+    const translate = { x: updatedCenter[0] - baseCenter[0], y: updatedCenter[1] - baseCenter[1] };
+
+    const rotate = updated.roll - base.roll;
+
+    return {
+        scale,
+        translate,
+        rotate,
+    };
+};
+
+const plottedFace = (baseCanvas, detectionData) => {
+    const ctx = baseCanvas.getContext('2d');
+    ctx.save();
 
     ctx.beginPath();
-    ctx.rect(data.x, data.y, data.width, data.height);
+    ctx.rect(detectionData.x, detectionData.y, detectionData.width, detectionData.height);
     ctx.strokeStyle = 'red';
     ctx.lineWidth = 5;
     ctx.stroke();
 
     ctx.beginPath();
-    ctx.arc(data.eyeMidpoint[0], data.eyeMidpoint[1], 10, 0, 2 * Math.PI);
+    ctx.arc(detectionData.eyeMidpoint[0], detectionData.eyeMidpoint[1], 10, 0, 2 * Math.PI);
     ctx.fillStyle = 'green';
     ctx.fill();
 
     ctx.beginPath();
-    ctx.arc(data.eyeRight[0], data.eyeLeft[1], 10, 0, 2 * Math.PI);
+    ctx.arc(detectionData.eyeRight[0], detectionData.eyeRight[1], 10, 0, 2 * Math.PI);
     ctx.fillStyle = 'yellow';
     ctx.fill();
 
     ctx.beginPath();
-    ctx.arc(data.eyeLeft[0], data.eyeLeft[1], 10, 0, 2 * Math.PI);
+    ctx.arc(detectionData.eyeLeft[0], detectionData.eyeLeft[1], 10, 0, 2 * Math.PI);
     ctx.fillStyle = 'pink';
     ctx.fill();
 
     ctx.beginPath();
-    ctx.arc(data.nose[0], data.nose[1], 10, 0, 2 * Math.PI);
+    ctx.arc(detectionData.nose[0], detectionData.nose[1], 10, 0, 2 * Math.PI);
     ctx.fillStyle = 'cyan';
     ctx.fill();
 
     ctx.save();
     ctx.beginPath();
-    ctx.translate(data.x + data.width / 2, data.y + data.height / 2);
-    ctx.rotate(data.roll);
-    ctx.rect(-data.width / 2, -data.height / 2, data.width, data.height);
+    ctx.translate(detectionData.x + detectionData.width / 2, detectionData.y + detectionData.height / 2);
+    ctx.rotate(detectionData.roll);
+    ctx.rect(-detectionData.width / 2, -detectionData.height / 2, detectionData.width, detectionData.height);
     ctx.strokeStyle = 'blue';
     ctx.lineWidth = 5;
     ctx.stroke();
+    ctx.restore();
 
-    await writeFile('test/output.jpg', out.toBuffer('image/jpeg'));
+    ctx.restore();
+    return baseCanvas;
+};
+
+const outputFace = async (baseCanvas, faceTransforms) => {
+    const avatar = await loadImage('test/head_t.png');
+    const ctx = baseCanvas.getContext('2d');
+
+    ctx.save();
+    ctx.globalAlpha = 0.75;
+    ctx.rect(0, 0, baseCanvas.width, baseCanvas.height);
+    ctx.fillStyle = '#000';
+    ctx.fill();
+    ctx.restore();
+
+    ctx.save();
+    ctx.globalAlpha = 0.75;
+    ctx.translate(
+        (baseCanvas.width / 2) + faceTransforms.translate.x + DEFAULT_TRANSFORMS.translate.x,
+        (baseCanvas.height / 2) + faceTransforms.translate.y + DEFAULT_TRANSFORMS.translate.y,
+    );
+    ctx.rotate(faceTransforms.rotate + DEFAULT_TRANSFORMS.rotate);
+    ctx.scale(faceTransforms.scale * DEFAULT_TRANSFORMS.scale, faceTransforms.scale * DEFAULT_TRANSFORMS.scale);
+    ctx.drawImage(
+        avatar,
+        (-avatar.width / 2),
+        (-avatar.height / 2),
+    )
+    ctx.restore();
+
+    return baseCanvas;
+};
+
+const main = async () => {
+    // Load the nets we need
+    await loadNets();
+
+    log('Loading baseline face...');
+    const baselineFace = await loadImage('test/default.jpg');
+    const baselineData = await processImage(baselineFace);
+    const baselineTransforms = transforms(baselineData, baselineData); // All zeros
+    const baselineOutput = plottedFace(await outputFace(faceapi.createCanvasFromMedia(baselineFace), baselineTransforms), baselineData);
+    await writeFile('test/output-default.jpg', baselineOutput.toBuffer('image/jpeg'));
+
+    log('Loading rotated face...');
+    const rotatedFace = await loadImage('test/rotated.jpg');
+    const rotatedData = await processImage(rotatedFace);
+    const rotatedTransforms = transforms(baselineData, rotatedData);
+    const rotatedOutput = plottedFace(await outputFace(faceapi.createCanvasFromMedia(rotatedFace), rotatedTransforms), rotatedData);
+    await writeFile('test/output-rotated.jpg', rotatedOutput.toBuffer('image/jpeg'));
 
     log('Done!');
 };
