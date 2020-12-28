@@ -2,15 +2,15 @@
   "name": "virtual-cam",
   "version": "1.0.0",
   "description": "",
-  "main": "index.js",
+  "main": "main.js",
   "scripts": {
-    "start": "node index.js"
+    "start": "electron ."
   },
   "author": "",
   "license": "ISC",
   "dependencies": {
     "@tensorflow/tfjs-node": "^1.7.0",
-    "canvas": "^2.6.1",
+    "electron": "^11.1.1",
     "face-api.js": "^0.22.2"
   }
 }

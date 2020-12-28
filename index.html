@@ -1,0 +1,109 @@
+<html>
+<head>
+    <style>
+        html,
+        body {
+            margin: 0;
+            padding: 0;
+            height: 100vh;
+            overflow: hidden;
+            background: #000;
+        }
+    </style>
+</head>
+<body>
+<script>
+    const { loadNets, processImage, plottedFace, transforms, outputFace } = require('./face');
+
+    // Get the webcam feed to a shadow video elm
+    const video = document.createElement('video');
+    navigator.getUserMedia(
+        { audio: false, video: true },
+        localMediaStream => {
+            video.srcObject = localMediaStream;
+            video.autoplay = true;
+        },
+        error => console.error(error)
+    );
+
+    // Load the tensorflow data before doing anything
+    loadNets().then(() => {
+        // Create the canvas
+        const canvas = document.createElement('canvas');
+        canvas.style.height = '100%';
+        canvas.style.width = '100%';
+        canvas.style.objectFit = 'contain';
+        document.body.appendChild(canvas);
+
+        // Some stuff we need to store
+        const FPS = 60;
+        let frames = 0;
+        let latency = 0;
+        let state = 'set-baseline';
+        let baselineData;
+
+        // Listen for spacebar to trigger state
+        window.addEventListener('keyup', event => {
+            if (event.code === 'Space') {
+                switch (state) {
+                    case 'set-baseline':
+                        state = 'active';
+                        break;
+                    case 'active':
+                        state = 'set-baseline';
+                        break;
+                }
+            }
+        }, true)
+
+        // Get frames for the canvas
+        setInterval(async () => {
+            // Get the frame
+            const frame = document.createElement('canvas');
+            frame.width = video.videoWidth;
+            frame.height = video.videoHeight;
+            frame.getContext('2d').drawImage(video, 0, 0, frame.width, frame.height);
+
+            // Run face detection on it
+            const detectionData = await processImage(frame);
+            if (state === 'set-baseline') baselineData = detectionData;
+
+            // Update the rolling latency
+            latency = ((latency * frames) + detectionData.duration) / (frames + 1);
+            frames++;
+            console.log(latency);
+            console.log(detectionData.score);
+
+            // Get the transforms for the avatar
+            const detectionTransforms = transforms(baselineData, detectionData);
+
+            // If we have the baseline, so hide the live view
+            if (state !== 'set-baseline') {
+                const ctx = frame.getContext('2d');
+                ctx.save();
+                ctx.rect(0, 0, frame.width, frame.height);
+                ctx.fillStyle = '#000';
+                ctx.fill();
+                ctx.restore();
+            }
+
+            // Render the avatar
+            outputFace(frame, detectionTransforms, state === 'set-baseline' ? 0.5 : 1);
+
+            // Draw the detection data if looking for baseline
+            if (state === 'set-baseline') plottedFace(frame, detectionData);
+
+            // Display (mirrored)
+            canvas.width = frame.width
+            canvas.height = frame.height
+            const ctx = canvas.getContext('2d');
+            ctx.save();
+            ctx.translate(canvas.width, 0);
+            ctx.scale(-1, 1);
+            ctx.drawImage(frame, 0, 0, canvas.width, canvas.height);
+            ctx.restore();
+        }, 1000 / FPS);
+    });
+</script>
+</body>
+</html>
