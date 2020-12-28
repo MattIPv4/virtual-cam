@@ -13,7 +13,7 @@
 </head>
 <body>
 <script>
-    const { loadNets, processImage, plottedFace, transforms, outputFace } = require('./face');
+    const { AVATAR, AVATAR_GHOST, loadNets, processImage, plottedFace, transforms, outputFace } = require('./face');
 
     // Get the webcam feed to a shadow video elm
     const video = document.createElement('video');
@@ -41,6 +41,7 @@
         let latency = 0;
         let state = 'set-baseline';
         let baselineData;
+        let lastTransforms;
 
         // Listen for spacebar to trigger state
         window.addEventListener('keyup', event => {
@@ -88,7 +89,15 @@
             }
 
             // Render the avatar
-            outputFace(frame, detectionTransforms, state === 'set-baseline' ? 0.5 : 1);
+            outputFace(
+                frame,
+                detectionData.success ? detectionTransforms : lastTransforms,
+                detectionData.success ? AVATAR : AVATAR_GHOST,
+                state === 'set-baseline' ? 0.5 : (detectionData.success ? 1 : 0.75),
+            );
+
+            // Store the last transforms if successful
+            if (detectionData.success) lastTransforms = detectionTransforms;
 
             // Draw the detection data if looking for baseline
             if (state === 'set-baseline') plottedFace(frame, detectionData);

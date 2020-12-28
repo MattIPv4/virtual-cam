@@ -22,7 +22,9 @@ const imageFromFile = file => {
 
 const USE_TINY = true;
 const SCORE_MIN = 0.25;
-const AVATAR = imageFromFile(join(__dirname, 'test', 'head_t.png'));
+
+module.exports.AVATAR = imageFromFile(join(__dirname, 'avatar.png'));
+module.exports.AVATAR_GHOST = imageFromFile(join(__dirname, 'avatar_ghost.png'));
 
 const getTop = data => data
     .map((a) => a.y)
@@ -152,7 +154,7 @@ module.exports.plottedFace = (baseCanvas, detectionData) => {
 const DEFAULT_TRANSFORMS = {
     scale: 0.9,
     translate: { x: -25, y: 50 },
-    rotate: 0.15,
+    rotate: -0.15,
 };
 
 module.exports.transforms = (base, updated) => {
@@ -183,9 +185,9 @@ module.exports.transforms = (base, updated) => {
     }
 };
 
-module.exports.outputFace = (baseCanvas, faceTransforms, opacity) => {
+module.exports.outputFace = (baseCanvas, faceTransforms, faceImage, opacity) => {
     // Calculate base avatar scale
-    const defaultScale = (baseCanvas.height * DEFAULT_TRANSFORMS.scale) / AVATAR.height;
+    const defaultScale = (baseCanvas.height * DEFAULT_TRANSFORMS.scale) / faceImage.height;
 
     // Render the avatar
     const ctx = baseCanvas.getContext('2d');
@@ -198,9 +200,9 @@ module.exports.outputFace = (baseCanvas, faceTransforms, opacity) => {
     ctx.rotate(faceTransforms.rotate + DEFAULT_TRANSFORMS.rotate);
     ctx.scale(faceTransforms.scale * defaultScale * -1, faceTransforms.scale * defaultScale);
     ctx.drawImage(
-        AVATAR,
-        (-AVATAR.width / 2),
-        (-AVATAR.height / 2),
+        faceImage,
+        (-faceImage.width / 2),
+        (-faceImage.height / 2),
     )
     ctx.restore();
 
