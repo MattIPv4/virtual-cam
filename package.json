@@ -1,0 +1,16 @@
+{
+  "name": "virtual-cam",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js"
+  },
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "@tensorflow/tfjs-node": "^1.7.0",
+    "canvas": "^2.6.1",
+    "face-api.js": "^0.22.2"
+  }
+}
