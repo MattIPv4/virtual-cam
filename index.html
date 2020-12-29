@@ -7,7 +7,27 @@
             padding: 0;
             height: 100vh;
             overflow: hidden;
-            background: #000;
+            background: rgba(0, 0, 0, 1);
+        }
+
+        .overlay {
+            position: fixed;
+            top: 0;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            max-height: 100%;
+            max-width: 100%;
+            background: rgba(0, 0, 0, 0.5);
+        }
+
+        html,
+        body,
+        .overlay {
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
         }
     </style>
 </head>
@@ -15,36 +35,107 @@
 <script>
     const { AVATAR, AVATAR_GHOST, loadNets, processImage, plottedFace, transforms, outputFace } = require('./face');
 
-    // Get the webcam feed to a shadow video elm
+    // Some stuff we need to store
+    const FPS = 60;
+    let frames = 0; // Number of frames the app has generated
+    let latency = 0; // Average latency for generating a frame
+    let state; // The state of the application
+    let device; // The media device ID to use
+    let baselineData; // The baseline calibration detection data
+    let lastTransforms; // Last valid track we had
+
+    // Hidden video element for webcam stream
     const video = document.createElement('video');
-    navigator.getUserMedia(
-        { audio: false, video: true },
-        localMediaStream => {
-            video.srcObject = localMediaStream;
-            video.autoplay = true;
-        },
-        error => console.error(error)
-    );
 
-    // Load the tensorflow data before doing anything
-    loadNets().then(() => {
-        // Create the canvas
-        const canvas = document.createElement('canvas');
-        canvas.style.height = '100%';
-        canvas.style.width = '100%';
-        canvas.style.objectFit = 'contain';
-        document.body.appendChild(canvas);
+    // Output canvas
+    const canvas = document.createElement('canvas');
+    canvas.style.height = '100%';
+    canvas.style.width = '100%';
+    canvas.style.objectFit = 'contain';
+    document.body.appendChild(canvas);
 
-        // Some stuff we need to store
-        const FPS = 60;
-        let frames = 0;
-        let latency = 0;
-        let state = 'set-baseline';
-        let baselineData;
-        let lastTransforms;
+    // Overlay for settings
+    const overlay = document.createElement('div');
+    overlay.className = 'overlay';
+    document.body.appendChild(overlay);
 
-        // Listen for spacebar to trigger state
+    const createStream = () => {
+        // Get the webcam feed to a shadow video elm
+        navigator.mediaDevices.getUserMedia({ audio: false, video: { deviceId: device } }).then(stream => {
+            video.srcObject = stream;
+            video.onloadedmetadata = () => video.play();
+        }).catch(err => console.log(err));
+    };
+
+    const processFrame = async () => {
+        if (video.videoHeight === 0 || video.videoWidth === 0) return;
+
+        // Get the frame
+        const frame = document.createElement('canvas');
+        frame.width = video.videoWidth;
+        frame.height = video.videoHeight;
+        frame.getContext('2d').drawImage(video, 0, 0, frame.width, frame.height);
+
+        // Run face detection on it
+        const detectionData = await processImage(frame);
+        if (state !== 'active') baselineData = detectionData;
+
+        // Update the rolling latency
+        latency = ((latency * frames) + detectionData.duration) / (frames + 1);
+        frames++;
+        console.log(latency);
+        console.log(detectionData.score);
+
+        // Get the transforms for the avatar
+        const detectionTransforms = transforms(baselineData, detectionData);
+
+        // If we have the baseline, so hide the live view
+        if (state === 'active') {
+            const ctx = frame.getContext('2d');
+            ctx.save();
+            ctx.rect(0, 0, frame.width, frame.height);
+            ctx.fillStyle = '#000';
+            ctx.fill();
+            ctx.restore();
+        }
+
+        // Render the avatar
+        outputFace(
+            frame,
+            detectionData.success ? detectionTransforms : lastTransforms,
+            detectionData.success ? AVATAR : AVATAR_GHOST,
+            state === 'active' ? (detectionData.success ? 1 : 0.75) : 0.5,
+        );
+
+        // Store the last transforms if successful
+        if (detectionData.success) lastTransforms = detectionTransforms;
+
+        // Draw the detection data if looking for baseline
+        if (state !== 'active') plottedFace(frame, detectionData);
+
+        // Display (mirrored)
+        canvas.width = frame.width
+        canvas.height = frame.height
+        const ctx = canvas.getContext('2d');
+        ctx.save();
+        ctx.translate(canvas.width, 0);
+        ctx.scale(-1, 1);
+        ctx.drawImage(frame, 0, 0, canvas.width, canvas.height);
+        ctx.restore();
+    }
+
+    // Get frames for the canvas
+    setInterval(processFrame, 1000 / FPS);
+
+    const main = async () => {
+        // Load the nets first
+        await loadNets();
+
+        // Listen for spacebar to toggle state
         window.addEventListener('keyup', event => {
+            console.log(event.code);
+
+            // Spacebar toggles calibration
             if (event.code === 'Space') {
                 switch (state) {
                     case 'set-baseline':
@@ -55,64 +146,43 @@
                         break;
                 }
             }
-        }, true)
 
-        // Get frames for the canvas
-        setInterval(async () => {
-            // Get the frame
-            const frame = document.createElement('canvas');
-            frame.width = video.videoWidth;
-            frame.height = video.videoHeight;
-            frame.getContext('2d').drawImage(video, 0, 0, frame.width, frame.height);
-
-            // Run face detection on it
-            const detectionData = await processImage(frame);
-            if (state === 'set-baseline') baselineData = detectionData;
-
-            // Update the rolling latency
-            latency = ((latency * frames) + detectionData.duration) / (frames + 1);
-            frames++;
-            console.log(latency);
-            console.log(detectionData.score);
-
-            // Get the transforms for the avatar
-            const detectionTransforms = transforms(baselineData, detectionData);
-
-            // If we have the baseline, so hide the live view
-            if (state !== 'set-baseline') {
-                const ctx = frame.getContext('2d');
-                ctx.save();
-                ctx.rect(0, 0, frame.width, frame.height);
-                ctx.fillStyle = '#000';
-                ctx.fill();
-                ctx.restore();
+            // Enter triggers device menu
+            if (event.code === 'Enter') {
+                state = 'select-device';
+                overlay.style.display = '';
             }
+        }, true);
 
-            // Render the avatar
-            outputFace(
-                frame,
-                detectionData.success ? detectionTransforms : lastTransforms,
-                detectionData.success ? AVATAR : AVATAR_GHOST,
-                state === 'set-baseline' ? 0.5 : (detectionData.success ? 1 : 0.75),
-            );
+        // Get all the media devices available
+        state = 'select-device';
+        const devices = (await navigator.mediaDevices.enumerateDevices())
+            .filter(device => device.kind === 'videoinput');
 
-            // Store the last transforms if successful
-            if (detectionData.success) lastTransforms = detectionTransforms;
+        // Generate a select
+        const select = document.createElement('select');
+        for (const device of devices) {
+            const opt = document.createElement('option');
+            opt.text = device.label;
+            opt.value = device.deviceId;
+            select.options.add(opt);
+        }
+        overlay.appendChild(select);
 
-            // Draw the detection data if looking for baseline
-            if (state === 'set-baseline') plottedFace(frame, detectionData);
+        // Add the button
+        const button = document.createElement('button');
+        button.textContent = 'Set webcam';
+        button.addEventListener('click', (event) => {
+            event.preventDefault();
+            device = select.value;
+            state = 'set-baseline';
+            overlay.style.display = 'none';
+            createStream();
+        });
+        overlay.appendChild(button);
+    };
 
-            // Display (mirrored)
-            canvas.width = frame.width
-            canvas.height = frame.height
-            const ctx = canvas.getContext('2d');
-            ctx.save();
-            ctx.translate(canvas.width, 0);
-            ctx.scale(-1, 1);
-            ctx.drawImage(frame, 0, 0, canvas.width, canvas.height);
-            ctx.restore();
-        }, 1000 / FPS);
-    });
+    main();
 </script>
 </body>
 </html>

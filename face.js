@@ -43,11 +43,11 @@ const getAbsDistance = (fromData, toData) => {
 };
 
 module.exports.loadNets = async () => {
-    await faceapi.nets.ssdMobilenetv1.loadFromDisk('./weights');
-    await faceapi.nets.tinyFaceDetector.loadFromDisk('./weights');
-    await faceapi.nets.faceLandmark68Net.loadFromDisk('./weights');
-    await faceapi.nets.faceLandmark68TinyNet.loadFromDisk('./weights');
-    await faceapi.nets.faceExpressionNet.loadFromDisk('./weights');
+    if (!USE_TINY) await faceapi.nets.ssdMobilenetv1.loadFromDisk('./weights');
+    if (USE_TINY) await faceapi.nets.tinyFaceDetector.loadFromDisk('./weights');
+    if (!USE_TINY) await faceapi.nets.faceLandmark68Net.loadFromDisk('./weights');
+    if (USE_TINY) await faceapi.nets.faceLandmark68TinyNet.loadFromDisk('./weights');
+    // await faceapi.nets.faceExpressionNet.loadFromDisk('./weights');
 };
 
 const faceDetectionOpts = () => USE_TINY
@@ -59,8 +59,8 @@ module.exports.processImage = async img => {
     const detectStart = Date.now();
     const detection = await faceapi
         .detectSingleFace(img, faceDetectionOpts())
-        .withFaceLandmarks(USE_TINY)
-        .withFaceExpressions();
+        .withFaceLandmarks(USE_TINY);
+        // .withFaceExpressions();
     const detectEnd = Date.now();
 
     // Failed to detect
