@@ -111,7 +111,8 @@
         if (detectionData.success) lastTransforms = detectionTransforms;
 
         // Draw the detection data if looking for baseline
-        if (state !== 'active') plottedFace(frame, detectionData);
+        // if (state !== 'active') plottedFace(frame, detectionData);
+        plottedFace(frame, detectionData);
 
         // Display (mirrored)
         canvas.width = frame.width
