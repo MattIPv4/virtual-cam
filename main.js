@@ -9,7 +9,7 @@ const createWindow = () => {
         },
     });
 
-    win.loadFile('index.html');
+    win.loadFile('index-warp.html');
 };
 
 app.whenReady().then(createWindow);

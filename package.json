@@ -10,7 +10,10 @@
   "license": "ISC",
   "dependencies": {
     "@tensorflow/tfjs-node": "^1.7.0",
+    "canvas-from-ndarray": "^1.0.0",
     "electron": "^11.1.1",
-    "face-api.js": "^0.22.2"
+    "face-api.js": "^0.22.2",
+    "ndarray-from-canvas": "^1.0.0",
+    "ndarray-idw-warp": "^0.2.0"
   }
 }

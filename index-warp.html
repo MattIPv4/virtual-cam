@@ -1,0 +1,189 @@
+<html>
+<head>
+    <style>
+        html,
+        body {
+            margin: 0;
+            padding: 0;
+            height: 100vh;
+            overflow: hidden;
+            background: rgba(0, 0, 0, 1);
+        }
+
+        .overlay {
+            position: fixed;
+            top: 0;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            max-height: 100%;
+            max-width: 100%;
+            background: rgba(0, 0, 0, 0.5);
+        }
+
+        html,
+        body,
+        .overlay {
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+        }
+    </style>
+</head>
+<body>
+<script>
+    const { AVATAR, AVATAR_GHOST, loadNets, detect, warp } = require('./warp');
+
+    // Some stuff we need to store
+    const FPS = 60;
+    let frames = 0; // Number of frames the app has generated
+    let latency = 0; // Average latency for generating a frame
+    let state; // The state of the application
+    let device; // The media device ID to use
+    let avatarData;
+
+    // Hidden video element for webcam stream
+    const video = document.createElement('video');
+
+    // Output canvas
+    const canvas = document.createElement('canvas');
+    canvas.style.height = '100%';
+    canvas.style.width = '100%';
+    canvas.style.objectFit = 'contain';
+    document.body.appendChild(canvas);
+
+    // Overlay for settings
+    const overlay = document.createElement('div');
+    overlay.className = 'overlay';
+    document.body.appendChild(overlay);
+
+    const createStream = () => {
+        // Get the webcam feed to a shadow video elm
+        navigator.mediaDevices.getUserMedia({ audio: false, video: { deviceId: device } }).then(stream => {
+            video.srcObject = stream;
+            video.onloadedmetadata = () => video.play();
+        }).catch(err => console.log(err));
+    };
+
+    const processFrame = async () => {
+        // Whilst in select device state, preview avatar detection
+        if (state === 'select-device' && avatarData) {
+            canvas.width = AVATAR.width
+            canvas.height = AVATAR.height
+            const ctx = canvas.getContext('2d');
+            ctx.drawImage(AVATAR, 0, 0, AVATAR.width, AVATAR.height);
+            for (const point of avatarData.points) {
+                ctx.beginPath();
+                ctx.arc(...point, 10, 0, 2 * Math.PI);
+                ctx.fillStyle = '#0ff';
+                ctx.fill();
+            }
+            return
+        }
+
+        // Only process video frame if video is active
+        if (video.videoHeight === 0 || video.videoWidth === 0) return;
+
+        // Track the start time for the frame render
+        const start = Date.now();
+
+        // Get the frame
+        const frame = document.createElement('canvas');
+        frame.width = video.videoWidth;
+        frame.height = video.videoHeight;
+        frame.getContext('2d').drawImage(video, 0, 0, frame.width, frame.height);
+
+        // Run face detection on it
+        const detectionData = await detect(frame);
+        console.log(detectionData);
+        if (detectionData.success !== true) return;
+
+        // Perform the warp
+        const overlay = warp(avatarData, detectionData, AVATAR);
+
+        // Draw onto the frame
+        frame.getContext('2d').drawImage(overlay, detectionData.x, detectionData.y, overlay.width, overlay.height);
+
+        // Display (mirrored)
+        canvas.width = frame.width
+        canvas.height = frame.height
+        const ctx = canvas.getContext('2d');
+        ctx.save();
+        ctx.translate(canvas.width, 0);
+        ctx.scale(-1, 1);
+        ctx.drawImage(frame, 0, 0, canvas.width, canvas.height);
+        ctx.restore();
+
+        // Update the rolling latency
+        latency = ((latency * frames) + (Date.now() - start)) / (frames + 1);
+        frames++;
+        console.log(latency);
+        console.log(frames);
+    }
+
+    // Get frames for the canvas
+    setInterval(processFrame, 1000 / FPS);
+
+    const main = async () => {
+        // Load the nets first
+        await loadNets();
+
+        // Process the avatar
+        avatarData = await detect(AVATAR, false);
+
+        // Listen for spacebar to toggle state
+        window.addEventListener('keyup', event => {
+            console.log(event.code);
+
+            // Spacebar toggles calibration
+            if (event.code === 'Space') {
+                switch (state) {
+                    case 'set-baseline':
+                        state = 'active';
+                        break;
+                    case 'active':
+                        state = 'set-baseline';
+                        break;
+                }
+            }
+
+            // Enter triggers device menu
+            if (event.code === 'Enter') {
+                state = 'select-device';
+                overlay.style.display = '';
+            }
+        }, true);
+
+        // Get all the media devices available
+        state = 'select-device';
+        const devices = (await navigator.mediaDevices.enumerateDevices())
+            .filter(device => device.kind === 'videoinput');
+
+        // Generate a select
+        const select = document.createElement('select');
+        for (const device of devices) {
+            const opt = document.createElement('option');
+            opt.text = device.label;
+            opt.value = device.deviceId;
+            select.options.add(opt);
+        }
+        overlay.appendChild(select);
+
+        // Add the button
+        const button = document.createElement('button');
+        button.textContent = 'Set webcam';
+        button.addEventListener('click', (event) => {
+            event.preventDefault();
+            device = select.value;
+            state = 'set-baseline';
+            overlay.style.display = 'none';
+            createStream();
+        });
+        overlay.appendChild(button);
+    };
+
+    main();
+</script>
+</body>
+</html>
