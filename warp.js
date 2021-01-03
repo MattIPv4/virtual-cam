@@ -1,8 +1,8 @@
 require('@tensorflow/tfjs-node');
 const faceapi = require('face-api.js');
 const { readFileSync } = require('fs');
-const { join, extname } = require('path');
-const { Point, Warper } = require('./imgwarp');
+const { extname } = require('path');
+const { Point, Warper } = require('./warper');
 
 // Force faceapi to be in a browser (electron) context
 faceapi.env.monkeyPatch({
@@ -23,8 +23,7 @@ const imageFromFile = file => {
 
 const SCORE_MIN = 0.25;
 
-module.exports.AVATAR = imageFromFile(join(__dirname, 'avatar.png'));
-module.exports.AVATAR_GHOST = imageFromFile(join(__dirname, 'avatar_ghost.png'));
+module.exports.loadImage = path => imageFromFile(path)
 
 module.exports.loadNets = async () => {
     // Tiny
@@ -63,12 +62,12 @@ module.exports.detect = async (img, useTiny = true) => {
 };
 
 module.exports.warp = (fromData, toData, sourceImg, applyWarp) => {
-    // Scale the avatar to the detection
+    // Scale the avatar face detection to the same size as the target face detection size
     const xScale = toData.width / fromData.width;
     const yScale = toData.height / fromData.height;
     const overlay = document.createElement('canvas');
-    overlay.width = toData.width;
-    overlay.height = toData.height;
+    overlay.width = sourceImg.width * xScale;
+    overlay.height = sourceImg.height * yScale;
     overlay.getContext('2d').drawImage(sourceImg, 0, 0, overlay.width, overlay.height);
 
     // Get the pixel data and warp it
@@ -76,12 +75,13 @@ module.exports.warp = (fromData, toData, sourceImg, applyWarp) => {
     const warp = new Warper(sourcePixels);
     const warpedPixels = warp.warp(
         fromData.points.map(point => new Point(point[0] * xScale, point[1] * yScale)),
-        toData.points.map(point => new Point(point[0] - toData.x, point[1] - toData.y)),
+        // fromData.points.map(point => new Point(point[0] * xScale, point[1] * yScale)),
+        toData.points.map(point => new Point(point[0] - toData.x + (avatarData.x * xScale), point[1] - toData.y + (avatarData.y * yScale))),
     );
+    overlay.getContext('2d').putImageData(applyWarp ? warpedPixels : sourcePixels, 0, 0);
 
     // TODO: This warp actually works but is a bit misaligned
 
-    // Draw the output
-    overlay.getContext('2d').putImageData(applyWarp ? warpedPixels : sourcePixels, 0, 0);
-    return overlay;
+    // Return the overlay and the scaling applied
+    return { overlay, xScale, yScale };
 }

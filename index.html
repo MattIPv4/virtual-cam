@@ -33,7 +33,8 @@
 </head>
 <body>
 <script>
-    const { AVATAR, AVATAR_GHOST, loadNets, detect, warp } = require('./warp');
+    const { join } = require('path');
+    const { loadImage, loadNets, detect, warp } = require('./warp');
 
     // Some stuff we need to store
     const FPS = 60;
@@ -41,8 +42,11 @@
     let latency = 0; // Average latency for generating a frame
     let state; // The state of the application
     let device; // The media device ID to use
-    let avatarData;
-    let applyWarp = false, applyMirror = false;
+    let avatarData; // Face track data for avatar
+    let applyWarp = false, applyMirror = false; // Output effect toggles
+
+    // Source image
+    const AVATAR = loadImage(join(__dirname, 'avatar.png'));
 
     // Hidden video element for webcam stream
     const video = document.createElement('video');
@@ -72,13 +76,16 @@
         if (state === 'select-device' && avatarData) {
             canvas.width = AVATAR.width
             canvas.height = AVATAR.height
-            const ctx = canvas.getContext('2d');
-            ctx.drawImage(AVATAR, 0, 0, AVATAR.width, AVATAR.height);
+            const canvasCtx = canvas.getContext('2d');
+            canvasCtx.drawImage(AVATAR, 0, 0, AVATAR.width, AVATAR.height);
+            canvasCtx.strokeStyle = '#f0f';
+            canvasCtx.lineWidth = 5;
+            canvasCtx.strokeRect(avatarData.x, avatarData.y, avatarData.width, avatarData.height);
             for (const point of avatarData.points) {
-                ctx.beginPath();
-                ctx.arc(...point, 10, 0, 2 * Math.PI);
-                ctx.fillStyle = '#0ff';
-                ctx.fill();
+                canvasCtx.beginPath();
+                canvasCtx.arc(...point, 5, 0, 2 * Math.PI);
+                canvasCtx.fillStyle = '#0ff';
+                canvasCtx.fill();
             }
             return
         }
@@ -93,30 +100,46 @@
         const frame = document.createElement('canvas');
         frame.width = video.videoWidth;
         frame.height = video.videoHeight;
-        frame.getContext('2d').drawImage(video, 0, 0, frame.width, frame.height);
+        const ctx = frame.getContext('2d');
+        ctx.drawImage(video, 0, 0, frame.width, frame.height);
 
         // Run face detection on it
         const detectionData = await detect(frame);
-        console.log(detectionData);
         if (detectionData.success !== true) return;
 
-        // Perform the warp
-        const overlay = warp(avatarData, detectionData, AVATAR, applyWarp);
+        // Display the detection data
+        ctx.strokeStyle = '#f0f';
+        ctx.lineWidth = 5;
+        ctx.strokeRect(detectionData.x, detectionData.y, detectionData.width, detectionData.height);
+        for (const point of detectionData.points) {
+            ctx.beginPath();
+            ctx.arc(...point, 5, 0, 2 * Math.PI);
+            ctx.fillStyle = '#0ff';
+            ctx.fill();
+        }
 
-        // Draw onto the frame
-        frame.getContext('2d').drawImage(overlay, detectionData.x, detectionData.y, overlay.width, overlay.height);
+        // Perform the warp
+        const { overlay, xScale, yScale } = warp(avatarData, detectionData, AVATAR, applyWarp);
+
+        // Draw onto the frame (aligning the face boxes)
+        const x = detectionData.x - (avatarData.x * xScale);
+        const y = detectionData.y - (avatarData.y * yScale);
+        ctx.drawImage(overlay, x, y, overlay.width, overlay.height);
+        ctx.strokeStyle = '#ff0';
+        ctx.lineWidth = 5;
+        ctx.strokeRect(x, y, overlay.width, overlay.height);
 
         // Display
         canvas.width = frame.width
         canvas.height = frame.height
-        const ctx = canvas.getContext('2d');
-        ctx.save();
+        const canvasCtx = canvas.getContext('2d');
+        canvasCtx.save();
         if (applyMirror) {
-            ctx.translate(canvas.width, 0);
-            ctx.scale(-1, 1);
+            canvasCtx.translate(canvas.width, 0);
+            canvasCtx.scale(-1, 1);
         }
-        ctx.drawImage(frame, 0, 0, canvas.width, canvas.height);
-        ctx.restore();
+        canvasCtx.drawImage(frame, 0, 0, canvas.width, canvas.height);
+        canvasCtx.restore();
 
         // Update the rolling latency
         latency = ((latency * frames) + (Date.now() - start)) / (frames + 1);
@@ -138,18 +161,6 @@
         // Listen for spacebar to toggle state
         window.addEventListener('keyup', event => {
             console.log(event.code);
-
-            // Spacebar toggles calibration
-            if (event.code === 'Space') {
-                switch (state) {
-                    case 'set-baseline':
-                        state = 'active';
-                        break;
-                    case 'active':
-                        state = 'set-baseline';
-                        break;
-                }
-            }
 
             if (event.code === 'KeyA') {
                 applyWarp = !applyWarp;
@@ -187,7 +198,7 @@
         button.addEventListener('click', (event) => {
             event.preventDefault();
             device = select.value;
-            state = 'set-baseline';
+            state = 'active';
             overlay.style.display = 'none';
             createStream();
         });

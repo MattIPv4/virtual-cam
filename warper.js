@@ -2,6 +2,9 @@
 // I have no clue what this code really does, the maths is beyond me, but it seems to work
 
 class AffineDeformation {
+    /**
+     * @private
+     */
     constructor(fromPoints, toPoints, alpha) {
         this.w = null;
         this.pRelative = null;
@@ -17,6 +20,9 @@ class AffineDeformation {
         this.alpha = alpha;
     }
 
+    /**
+     * @private
+     */
     pointMover(point) {
         if (null == this.pRelative || this.pRelative.length < this.n) {
             this.pRelative = new Array(this.n);
@@ -64,6 +70,9 @@ class AffineDeformation {
 }
 
 class BilinearInterpolation {
+    /**
+     * @private
+     */
     constructor(width, height, fillColor) {
         this.width = width;
         this.height = height;
@@ -71,6 +80,9 @@ class BilinearInterpolation {
         this.imgTargetData = document.createElement('canvas').getContext('2d').createImageData(this.width, this.height);
     }
 
+    /**
+     * @private
+     */
     generate(source, fromGrid, toGrid) {
         this.imgData = source;
         for (let i = 0; i < toGrid.length; ++i)
@@ -78,6 +90,9 @@ class BilinearInterpolation {
         return this.imgTargetData;
     }
 
+    /**
+     * @private
+     */
     fill(sourcePoints, fillingPoints) {
         const x0 = Math.max(fillingPoints[0].x, 0);
         const x1 = Math.min(fillingPoints[2].x, this.width - 1);
@@ -125,6 +140,9 @@ class BilinearInterpolation {
 }
 
 class Matrix22 {
+    /**
+     * @private
+     */
     constructor(N11, N12, N21, N22) {
         this.M11 = N11;
         this.M12 = N12;
@@ -132,16 +150,25 @@ class Matrix22 {
         this.M22 = N22;
     }
 
+    /**
+     * @private
+     */
     adjugate() {
         return new Matrix22(
             this.M22, -this.M12,
             -this.M21, this.M11);
     }
 
+    /**
+     * @private
+     */
     determinant() {
         return this.M11 * this.M22 - this.M12 * this.M21;
     }
 
+    /**
+     * @private
+     */
     multiply(m) {
         this.M11 *= m;
         this.M12 *= m;
@@ -150,6 +177,9 @@ class Matrix22 {
         return this;
     }
 
+    /**
+     * @private
+     */
     addM(o) {
         this.M11 += o.M11;
         this.M12 += o.M12;
@@ -157,26 +187,43 @@ class Matrix22 {
         this.M22 += o.M22;
     }
 
+    /**
+     * @private
+     */
     inverse() {
         return this.adjugate().multiply(1.0 / this.determinant());
     }
 }
 
 class Point {
+    /**
+     * Create a point for use in the Warper.
+     *
+     * @param x
+     * @param y
+     */
     constructor(x, y) {
         this.x = x;
         this.y = y;
     }
 
+    /**
+     * @private
+     */
     add(o) {
         return new Point(this.x + o.x, this.y + o.y);
     }
 
+    /**
+     * @private
+     */
     subtract(o) {
         return new Point(this.x - o.x, this.y - o.y);
     }
 
-    // w * [x; y] * [x, y]
+    /**
+     * @private
+     */
     wXtX(w) {
         return (new Matrix22(
             this.x * this.x * w, this.x * this.y * w,
@@ -184,20 +231,31 @@ class Point {
         ));
     }
 
-    // Dot product
+    /**
+     * @private
+     */
     dotP(o) {
         return this.x * o.x + this.y * o.y;
     }
 
+    /**
+     * @private
+     */
     multiply(o) {
         return new Point(
             this.x * o.M11 + this.y * o.M21, this.x * o.M12 + this.y * o.M22);
     }
 
+    /**
+     * @private
+     */
     multiplyD(o) {
         return new Point(this.x * o, this.y * o);
     }
 
+    /**
+     * @private
+     */
     static weightedAverage(p, w) {
         let sx = 0,
             sy = 0,
@@ -212,6 +270,14 @@ class Point {
 }
 
 class Warper {
+    /**
+     * Create a new warper instance.
+     *
+     * @param {ImageData} imgData
+     * @param {Number} [optGridSize = 20]
+     * @param {Number} [optAlpha = 1]
+     * @param {Number[]} [optFillRGBA =  [0, 0, 0, 0]]
+     */
     constructor(imgData, optGridSize, optAlpha, optFillRGBA) {
         this.alpha = optAlpha || 1;
         this.gridSize = optGridSize || 20;
@@ -233,6 +299,13 @@ class Warper {
                 ]);
     }
 
+    /**
+     * Warps the original image data given a set of points to warp from and to.
+     *
+     * @param {Point[]} fromPoints
+     * @param {Point[]} toPoints
+     * @return {ImageData}
+     */
     warp(fromPoints, toPoints) {
         const deformation = new AffineDeformation(toPoints, fromPoints, this.alpha);
         const transformedGrid = [];
