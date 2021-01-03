@@ -2,9 +2,7 @@ require('@tensorflow/tfjs-node');
 const faceapi = require('face-api.js');
 const { readFileSync } = require('fs');
 const { join, extname } = require('path');
-const warp = require('ndarray-idw-warp');
-const ndarrayFromCanvas = require('ndarray-from-canvas');
-const canvasFromNdarray = require('canvas-from-ndarray');
+const { Point, Warper } = require('./imgwarp');
 
 // Force faceapi to be in a browser (electron) context
 faceapi.env.monkeyPatch({
@@ -64,7 +62,7 @@ module.exports.detect = async (img, useTiny = true) => {
     };
 };
 
-module.exports.warp = (fromData, toData, sourceImg) => {
+module.exports.warp = (fromData, toData, sourceImg, applyWarp) => {
     // Scale the avatar to the detection
     const xScale = toData.width / fromData.width;
     const yScale = toData.height / fromData.height;
@@ -73,32 +71,17 @@ module.exports.warp = (fromData, toData, sourceImg) => {
     overlay.height = toData.height;
     overlay.getContext('2d').drawImage(sourceImg, 0, 0, overlay.width, overlay.height);
 
-    // Build the warp map (scaled)
-    const warpMap = fromData.points.map((point, i) => [
-        point[0] * xScale,
-        point[1] * yScale,
-        toData.points[i][0],
-        toData.points[i][1],
-    ]);
-
-    // Pin all our edges not warped
-    const edges = [];
-    for (let x = 0; x < overlay.width; x++) {
-        edges.push([x, 0, x, 0]); // top
-        edges.push([x, overlay.height - 1, x, overlay.height - 1]); // bottom
-    }
-    for (let y = 0; y < overlay.width; y++) {
-        edges.push([0, y, 0, y]); // left
-        edges.push([overlay.width - 1, y, overlay.width - 1, y]); // right
-    }
-    console.log(edges);
-
     // Get the pixel data and warp it
-    const sourcePixels = ndarrayFromCanvas(overlay);
-    const warpedPixels = warp(sourcePixels, [...edges, ...warpMap]); // TODO: Help! This line is super slow & borked
-    console.log(sourcePixels);
-    console.log(warpedPixels);
+    const sourcePixels = overlay.getContext('2d').getImageData(0, 0, overlay.width, overlay.height);
+    const warp = new Warper(sourcePixels);
+    const warpedPixels = warp.warp(
+        fromData.points.map(point => new Point(point[0] * xScale, point[1] * yScale)),
+        toData.points.map(point => new Point(point[0] - toData.x, point[1] - toData.y)),
+    );
+
+    // TODO: This warp actually works but is a bit misaligned
 
     // Draw the output
-    return canvasFromNdarray(warpedPixels, overlay);
+    overlay.getContext('2d').putImageData(applyWarp ? warpedPixels : sourcePixels, 0, 0);
+    return overlay;
 }
