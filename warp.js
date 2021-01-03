@@ -22,6 +22,7 @@ const imageFromFile = file => {
 };
 
 const SCORE_MIN = 0.25;
+const OVERLAY_PADDING = 0.5;
 
 module.exports.loadImage = path => imageFromFile(path)
 
@@ -62,26 +63,40 @@ module.exports.detect = async (img, useTiny = true) => {
 };
 
 module.exports.warp = (fromData, toData, sourceImg, applyWarp) => {
-    // Scale the avatar face detection to the same size as the target face detection size
+    // Scale the avatar to have the same size face detection box as the target
+    // Also apply some whitespace padding around
     const xScale = toData.width / fromData.width;
     const yScale = toData.height / fromData.height;
+    const xPad = sourceImg.width * OVERLAY_PADDING;
+    const yPad = sourceImg.height * OVERLAY_PADDING;
     const overlay = document.createElement('canvas');
-    overlay.width = sourceImg.width * xScale;
-    overlay.height = sourceImg.height * yScale;
-    overlay.getContext('2d').drawImage(sourceImg, 0, 0, overlay.width, overlay.height);
+    overlay.width = (sourceImg.width * xScale) + (xPad * 2);
+    overlay.height = (sourceImg.height * yScale) + (yPad * 2);
+    overlay.getContext('2d').drawImage(
+        sourceImg,
+        xPad,
+        yPad,
+        sourceImg.width * xScale,
+        sourceImg.height * yScale,
+    );
 
     // Get the pixel data and warp it
     const sourcePixels = overlay.getContext('2d').getImageData(0, 0, overlay.width, overlay.height);
     const warp = new Warper(sourcePixels);
     const warpedPixels = warp.warp(
-        fromData.points.map(point => new Point(point[0] * xScale, point[1] * yScale)),
-        // fromData.points.map(point => new Point(point[0] * xScale, point[1] * yScale)),
-        toData.points.map(point => new Point(point[0] - toData.x + (avatarData.x * xScale), point[1] - toData.y + (avatarData.y * yScale))),
+        fromData.points.map(point => new Point(
+            (point[0] * xScale) + xPad,
+            (point[1] * yScale) + yPad,
+        )),
+        toData.points.map(point => new Point(
+            point[0] - toData.x + (avatarData.x * xScale) + xPad,
+            point[1] - toData.y + (avatarData.y * yScale) + yPad,
+        )),
     );
     overlay.getContext('2d').putImageData(applyWarp ? warpedPixels : sourcePixels, 0, 0);
 
     // TODO: This warp actually works but is a bit misaligned
 
     // Return the overlay and the scaling applied
-    return { overlay, xScale, yScale };
+    return { overlay, xScale, yScale, xPad, yPad };
 }

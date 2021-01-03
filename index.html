@@ -43,10 +43,16 @@
     let state; // The state of the application
     let device; // The media device ID to use
     let avatarData; // Face track data for avatar
-    let applyWarp = false, applyMirror = false; // Output effect toggles
+
+    // Output effect toggles
+    let applyWarp = true,
+        applyData = false,
+        applyVideo = false,
+        applyMirror = true;
 
     // Source image
-    const AVATAR = loadImage(join(__dirname, 'avatar.png'));
+    // const AVATAR = loadImage(join(__dirname, 'imgs', 'avatar.png'));
+    const AVATAR = loadImage(join(__dirname, 'imgs', 'putin.png'));
 
     // Hidden video element for webcam stream
     const video = document.createElement('video');
@@ -107,27 +113,44 @@
         const detectionData = await detect(frame);
         if (detectionData.success !== true) return;
 
-        // Display the detection data
-        ctx.strokeStyle = '#f0f';
-        ctx.lineWidth = 5;
-        ctx.strokeRect(detectionData.x, detectionData.y, detectionData.width, detectionData.height);
-        for (const point of detectionData.points) {
-            ctx.beginPath();
-            ctx.arc(...point, 5, 0, 2 * Math.PI);
-            ctx.fillStyle = '#0ff';
-            ctx.fill();
+        // Hide the video feed
+        if (!applyVideo) {
+            ctx.fillStyle = '#000';
+            ctx.fillRect(0, 0, frame.width, frame.height);
         }
 
         // Perform the warp
-        const { overlay, xScale, yScale } = warp(avatarData, detectionData, AVATAR, applyWarp);
+        const { overlay, xScale, yScale, xPad, yPad } = warp(avatarData, detectionData, AVATAR, applyWarp);
 
         // Draw onto the frame (aligning the face boxes)
-        const x = detectionData.x - (avatarData.x * xScale);
-        const y = detectionData.y - (avatarData.y * yScale);
+        const x = detectionData.x - (avatarData.x * xScale) - xPad;
+        const y = detectionData.y - (avatarData.y * yScale) - yPad;
         ctx.drawImage(overlay, x, y, overlay.width, overlay.height);
-        ctx.strokeStyle = '#ff0';
-        ctx.lineWidth = 5;
-        ctx.strokeRect(x, y, overlay.width, overlay.height);
+
+        // Display the detection data
+        if (applyData) {
+            ctx.save();
+
+            // Source face boundary
+            ctx.strokeStyle = '#f0f';
+            ctx.lineWidth = 5;
+            ctx.strokeRect(detectionData.x, detectionData.y, detectionData.width, detectionData.height);
+
+            // Source face landmarks
+            for (const point of detectionData.points) {
+                ctx.beginPath();
+                ctx.arc(...point, 5, 0, 2 * Math.PI);
+                ctx.fillStyle = '#0ff';
+                ctx.fill();
+            }
+
+            // Overlay boundary
+            ctx.strokeStyle = '#ff0';
+            ctx.lineWidth = 5;
+            ctx.strokeRect(x, y, overlay.width, overlay.height);
+
+            ctx.restore();
+        }
 
         // Display
         canvas.width = frame.width
@@ -168,6 +191,14 @@
 
             if (event.code === 'KeyF') {
                 applyMirror = !applyMirror;
+            }
+
+            if (event.code === 'KeyD') {
+                applyData = !applyData;
+            }
+
+            if (event.code === 'KeyV') {
+                applyVideo = !applyVideo;
             }
 
             // Enter triggers device menu
