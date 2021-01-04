@@ -34,12 +34,14 @@
 <body>
 <script>
     const { join } = require('path');
-    const { loadImage, loadNets, detect, warp } = require('./warp');
+    const detect = require('./detect/face-api');
+    const { loadImage, warp } = require('./warp');
 
     // Some stuff we need to store
     const FPS = 60;
     let frames = 0; // Number of frames the app has generated
     let latency = 0; // Average latency for generating a frame
+    let detection = 0; // Average duration for generating face data
     let state; // The state of the application
     let device; // The media device ID to use
     let avatarData; // Face track data for avatar
@@ -51,7 +53,7 @@
         applyMirror = true;
 
     // Source image
-    // const AVATAR = loadImage(join(__dirname, 'imgs', 'avatar.png'));
+    // const AVATAR = loadImage(join(__dirname, 'imgs', 'mattipv4.png'));
     const AVATAR = loadImage(join(__dirname, 'imgs', 'putin.png'));
 
     // Hidden video element for webcam stream
@@ -110,7 +112,7 @@
         ctx.drawImage(video, 0, 0, frame.width, frame.height);
 
         // Run face detection on it
-        const detectionData = await detect(frame);
+        const detectionData = await detect.detect(frame);
         if (detectionData.success !== true) return;
 
         // Hide the video feed
@@ -166,9 +168,21 @@
 
         // Update the rolling latency
         latency = ((latency * frames) + (Date.now() - start)) / (frames + 1);
+        detection = ((detection * frames) + (detectionData.duration)) / (frames + 1);
         frames++;
-        console.log(latency);
-        console.log(frames);
+
+        // Display the rolling latency
+        if (applyData) {
+            canvasCtx.save();
+            canvasCtx.fillStyle = '#ff0';
+            canvasCtx.strokeStyle = '#000';
+            canvasCtx.font = '28px sans-serif';
+            const fmtNum = num => num.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 2 });
+            const text = `${fmtNum(1000 / latency)} FPS | ${fmtNum(latency)} ms latency | ${fmtNum(detection)} ms detection | ${frames.toLocaleString()} frames`
+            canvasCtx.fillText(text, 50, 50);
+            canvasCtx.strokeText(text, 50, 50);
+            canvasCtx.restore();
+        }
     }
 
     // Get frames for the canvas
@@ -176,10 +190,10 @@
 
     const main = async () => {
         // Load the nets first
-        await loadNets();
+        await detect.load();
 
         // Process the avatar
-        avatarData = await detect(AVATAR, false);
+        avatarData = await detect.detect(AVATAR, false);
 
         // Listen for spacebar to toggle state
         window.addEventListener('keyup', event => {
